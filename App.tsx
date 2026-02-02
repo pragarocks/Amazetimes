@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Header } from './components/Header';
 import { ArticleCard } from './components/ArticleCard';
 import { SkeletonCard } from './components/SkeletonCard';
@@ -19,7 +19,6 @@ const App: React.FC = () => {
   const [isDropdownOpen, setIsDropdownOpen] = useState<boolean>(false);
   const [selectedArticle, setSelectedArticle] = useState<EnhancedArticle | null>(null);
 
-  // Function to perform live fetch + AI processing for a specific feed
   const generateLiveFeed = async (feedId: string) => {
     setGenerating(true);
     setError(null);
@@ -49,14 +48,12 @@ const App: React.FC = () => {
     setLoading(true);
     setError(null);
     try {
-      const baseUrl = (import.meta as any).env?.BASE_URL || '/';
-      const cleanBase = baseUrl.endsWith('/') ? baseUrl : `${baseUrl}/`;
-      const dataUrl = `${cleanBase}data/news.json`.replace(/\/+/g, '/');
+      // Fetch news.json relative to the current location
+      // Using './data/news.json' ensures it works in subfolders or root
+      const response = await fetch('./data/news.json');
       
-      const response = await fetch(dataUrl);
       if (!response.ok) {
         if (response.status === 404) {
-          // If 404, we are likely on the first run or AI Studio. Trigger live generation!
           console.log("Static file missing. Switching to Live Generation Mode...");
           generateLiveFeed(selectedFeedId);
           return;
@@ -69,7 +66,6 @@ const App: React.FC = () => {
       setLastUpdated(data.updatedAt);
     } catch (err: any) {
       console.error("Data fetch error:", err);
-      // Fallback to live if static fetch fails for any reason
       generateLiveFeed(selectedFeedId);
     } finally {
       setLoading(false);
@@ -78,9 +74,8 @@ const App: React.FC = () => {
 
   useEffect(() => {
     fetchStaticData();
-  }, []); // Initial run only
+  }, []);
 
-  // If user switches tab and we don't have data for it, fetch it live
   useEffect(() => {
     if (!loading && !allFeeds[selectedFeedId]) {
       generateLiveFeed(selectedFeedId);

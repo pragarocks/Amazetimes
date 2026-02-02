@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 # 📰 Amazetime.in — AI-Powered News Portal
 
 **Amazetime.in** is a cutting-edge news aggregator that bridges regional reporting with high-end digital journalism. It automatically collects local Tamil news feeds and uses **Google Gemini 3 Flash AI** to rewrite them into professional, engaging editorial content.
@@ -62,7 +61,3 @@ To add a new district or news category, update the `FEED_SOURCES` array in:
 ---
 
 *Built with ❤️ for the Tamil community by the Amazetime Team.*
-=======
-# Amazetimes
-Amazetimes is a news platform with trending news written by AI
->>>>>>> b5378c871ed88fb10724190cdfc48c0feba477a0
