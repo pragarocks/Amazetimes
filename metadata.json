@@ -1,0 +1,5 @@
+{
+  "name": "Amazetime.in",
+  "description": "An AI-powered news aggregator that transforms local Tamil news feeds into concise, English summaries using Gemini 2.5 Flash.",
+  "requestFramePermissions": []
+}
