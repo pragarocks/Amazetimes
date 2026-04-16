@@ -1,0 +1,76 @@
+name: Update AI News Data
+
+on:
+  schedule:
+    - cron: '0 */3 * * *'   # Every 3 hours
+  workflow_dispatch:          # Allow manual trigger from GitHub UI
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
+jobs:
+  build-and-deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+
+    steps:
+      # ── Checkout ───────────────────────────────────────────────────────────
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # ── Node setup ─────────────────────────────────────────────────────────
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      # ── Install dependencies ───────────────────────────────────────────────
+      - name: Install dependencies
+        run: npm ci
+
+      # ── Generate news data ─────────────────────────────────────────────────
+      # continue-on-error: false → if ALL sources fail the step fails.
+      # Individual source failures are isolated inside generate-news.js.
+      - name: Generate News Data
+        run: npm run generate
+        env:
+          API_KEY: ${{ secrets.API_KEY }}
+        timeout-minutes: 15
+
+      # ── Commit updated news.json ───────────────────────────────────────────
+      - name: Commit and Push Data
+        run: |
+          git config --global user.name  "Amazetime Bot"
+          git config --global user.email "bot@amazetime.in"
+          git add public/data/news.json
+          git diff --cached --quiet || git commit -m "chore: automated news update [skip ci]"
+          git push origin main
+
+      # ── Build and deploy to GitHub Pages ──────────────────────────────────
+      - name: Setup Pages
+        uses: actions/configure-pages@v4
+
+      - name: Build website
+        run: npm run build
+        env:
+          API_KEY: ${{ secrets.API_KEY }}
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: './dist'
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
