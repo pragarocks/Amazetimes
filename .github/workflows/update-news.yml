@@ -55,7 +55,7 @@ jobs:
           git config --global user.email "bot@amazetime.in"
           git add public/data/news.json
           git diff --cached --quiet || git commit -m "chore: automated news update [skip ci]"
-          git push origin main
+          git push origin master
 
       # ── Build and deploy to GitHub Pages ──────────────────────────────────
       - name: Setup Pages
