@@ -407,7 +407,7 @@ async function processWithGemini(items) {
 
   const response = await withRetry(
     () => ai.models.generateContent({
-      model: 'gemini-2.5-flash-preview-04-17',
+      model: 'gemini-2.5-flash',
       contents: `You are the Chief Editor for 'Amazetime.in', a premium Tamil digital news platform.
 
 TASK: Rewrite the following ${payload.length} news items into high-quality, professional Tamil journalism.
