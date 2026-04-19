@@ -1,7 +1,7 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { RSSItem, AIArticle, EnhancedArticle } from "../types";
 
-const GEMINI_MODEL = "gemini-2.5-flash-preview-04-17";
+const GEMINI_MODEL = "gemini-2.5-flash";
 
 /**
  * Rewrites raw RSS items into professional Tamil journalism using Gemini.
