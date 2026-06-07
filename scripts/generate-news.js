@@ -29,14 +29,19 @@ const GEMINI_API_KEY = process.env.GEMINI_API_KEY || process.env.API_KEY;
 const OPENAI_MODEL   = 'gpt-4o-mini';
 const GEMINI_MODEL   = 'gemini-2.5-flash';
 
+// Set NO_AI=1 to force passthrough (copy RSS as-is, no rewriting, no tokens) —
+// useful for testing the fetch → write → display pipeline locally for free.
 let AI_PROVIDER;
-if (OPENAI_API_KEY && OPENAI_API_KEY.startsWith('sk-')) {
+if (process.env.NO_AI === '1') {
+  AI_PROVIDER = 'none';
+} else if (OPENAI_API_KEY && OPENAI_API_KEY.startsWith('sk-')) {
   AI_PROVIDER = 'openai';
 } else if (GEMINI_API_KEY) {
   AI_PROVIDER = 'gemini';
 } else {
-  console.error("FATAL: No AI key set. Provide OPENAI_API_KEY or GEMINI_API_KEY (or API_KEY). Exiting.");
-  process.exit(1);
+  // No key → fall back to passthrough instead of failing the whole run.
+  console.warn("⚠️  No AI key set (OPENAI_API_KEY / GEMINI_API_KEY / API_KEY) — running in passthrough mode (no rewriting).");
+  AI_PROVIDER = 'none';
 }
 
 // Gemini client is created lazily only when that provider is active.
@@ -87,7 +92,7 @@ const randomUA = () => USER_AGENTS[Math.floor(Math.random() * USER_AGENTS.length
 //   https://news.google.com/rss/search?q=QUERY&hl=ta-IN&gl=IN&ceid=IN:ta
 
 const FEED_SOURCES = [
-  // ── Primary category feeds (Google News RSS) ────────────────────────────
+  // ── Category feeds (Google News RSS) ─────────────────────────────────────
   {
     id: 'top-news',
     name: 'தலைப்புச் செய்திகள்',
@@ -111,7 +116,7 @@ const FEED_SOURCES = [
     id: 'sports',
     name: 'விளையாட்டு',
     type: 'rss',
-    url: 'https://news.google.com/rss/search?q=cricket+IPL+sports+india+2025&hl=ta-IN&gl=IN&ceid=IN:ta',
+    url: 'https://news.google.com/rss/search?q=cricket+IPL+sports+india&hl=ta-IN&gl=IN&ceid=IN:ta',
     fallbackUrl: 'https://news.google.com/rss/search?q=tamil+sports+news&hl=ta-IN&gl=IN&ceid=IN:ta',
   },
   {
@@ -120,63 +125,13 @@ const FEED_SOURCES = [
     type: 'rss',
     url: 'https://news.google.com/rss/search?q=kollywood+tamil+cinema+movies+box+office&hl=ta-IN&gl=IN&ceid=IN:ta',
   },
-  {
-    id: 'world',
-    name: 'உலகம்',
-    type: 'rss',
-    // BBC Tamil is a premium, highly reliable Tamil news source
-    url: 'https://feeds.bbci.co.uk/tamil/rss.xml',
-    fallbackUrl: 'https://news.google.com/rss/search?q=world+international+news&hl=ta-IN&gl=IN&ceid=IN:ta',
-  },
-  {
-    id: 'technology',
-    name: 'தொழில்நுட்பம்',
-    type: 'rss',
-    url: 'https://news.google.com/rss/search?q=technology+AI+india+tech+news&hl=ta-IN&gl=IN&ceid=IN:ta',
-  },
-  {
-    id: 'business',
-    name: 'வணிகம்',
-    type: 'rss',
-    url: 'https://news.google.com/rss/search?q=india+business+economy+market+stocks&hl=ta-IN&gl=IN&ceid=IN:ta',
-  },
 
-  // ── City-specific feeds (Google News RSS) ───────────────────────────────
-  {
-    id: 'chennai',
-    name: 'சென்னை',
-    type: 'rss',
-    url: 'https://news.google.com/rss/search?q=chennai+news+today&hl=ta-IN&gl=IN&ceid=IN:ta',
-  },
+  // ── Kongu-region district feeds (Google News RSS) ────────────────────────
   {
     id: 'coimbatore',
     name: 'கோயம்புத்தூர்',
     type: 'rss',
-    url: 'https://news.google.com/rss/search?q=coimbatore+news&hl=ta-IN&gl=IN&ceid=IN:ta',
-  },
-  {
-    id: 'madurai',
-    name: 'மதுரை',
-    type: 'rss',
-    url: 'https://news.google.com/rss/search?q=madurai+news&hl=ta-IN&gl=IN&ceid=IN:ta',
-  },
-  {
-    id: 'tiruchirappalli',
-    name: 'திருச்சி',
-    type: 'rss',
-    url: 'https://news.google.com/rss/search?q=tiruchirappalli+trichy+news&hl=ta-IN&gl=IN&ceid=IN:ta',
-  },
-  {
-    id: 'salem',
-    name: 'சேலம்',
-    type: 'rss',
-    url: 'https://news.google.com/rss/search?q=salem+district+tamilnadu+news&hl=ta-IN&gl=IN&ceid=IN:ta',
-  },
-  {
-    id: 'tirunelveli',
-    name: 'திருநெல்வேலி',
-    type: 'rss',
-    url: 'https://news.google.com/rss/search?q=tirunelveli+nellai+news&hl=ta-IN&gl=IN&ceid=IN:ta',
+    url: 'https://news.google.com/rss/search?q=coimbatore+district+news&hl=ta-IN&gl=IN&ceid=IN:ta',
   },
   {
     id: 'erode',
@@ -185,22 +140,40 @@ const FEED_SOURCES = [
     url: 'https://news.google.com/rss/search?q=erode+district+tamilnadu+news&hl=ta-IN&gl=IN&ceid=IN:ta',
   },
   {
-    id: 'vellore',
-    name: 'வேலூர்',
+    id: 'tiruppur',
+    name: 'திருப்பூர்',
     type: 'rss',
-    url: 'https://news.google.com/rss/search?q=vellore+district+tamilnadu+news&hl=ta-IN&gl=IN&ceid=IN:ta',
+    url: 'https://news.google.com/rss/search?q=tiruppur+district+tamilnadu+news&hl=ta-IN&gl=IN&ceid=IN:ta',
   },
   {
-    id: 'thanjavur',
-    name: 'தஞ்சாவூர்',
+    id: 'salem',
+    name: 'சேலம்',
     type: 'rss',
-    url: 'https://news.google.com/rss/search?q=thanjavur+tanjore+news&hl=ta-IN&gl=IN&ceid=IN:ta',
+    url: 'https://news.google.com/rss/search?q=salem+district+tamilnadu+news&hl=ta-IN&gl=IN&ceid=IN:ta',
   },
   {
-    id: 'kanyakumari',
-    name: 'கன்னியாகுமரி',
+    id: 'namakkal',
+    name: 'நாமக்கல்',
     type: 'rss',
-    url: 'https://news.google.com/rss/search?q=kanyakumari+news+tamilnadu&hl=ta-IN&gl=IN&ceid=IN:ta',
+    url: 'https://news.google.com/rss/search?q=namakkal+district+tamilnadu+news&hl=ta-IN&gl=IN&ceid=IN:ta',
+  },
+  {
+    id: 'nilgiris',
+    name: 'நீலகிரி',
+    type: 'rss',
+    url: 'https://news.google.com/rss/search?q=nilgiris+ooty+district+news&hl=ta-IN&gl=IN&ceid=IN:ta',
+  },
+  {
+    id: 'karur',
+    name: 'கரூர்',
+    type: 'rss',
+    url: 'https://news.google.com/rss/search?q=karur+district+tamilnadu+news&hl=ta-IN&gl=IN&ceid=IN:ta',
+  },
+  {
+    id: 'dharmapuri',
+    name: 'தர்மபுரி',
+    type: 'rss',
+    url: 'https://news.google.com/rss/search?q=dharmapuri+district+tamilnadu+news&hl=ta-IN&gl=IN&ceid=IN:ta',
   },
 ];
 
@@ -311,9 +284,26 @@ STRICT RULES:
 async function processBatch(items) {
   const payload = buildPayload(items);
   if (payload.length === 0) return [];
-  return AI_PROVIDER === 'openai'
-    ? processWithOpenAI(payload)
-    : processWithGemini(payload);
+  if (AI_PROVIDER === 'none')   return processPassthrough(payload);
+  if (AI_PROVIDER === 'openai') return processWithOpenAI(payload);
+  return processWithGemini(payload);
+}
+
+/**
+ * Passthrough (no AI, no tokens): copy the RSS title/content into the article
+ * shape so the fetch → write → display pipeline can be tested for free.
+ */
+function processPassthrough(payload) {
+  return payload.map(p => ({
+    originalLink:       p.link,
+    headline:           p.title,
+    summary:            (p.content || p.title).substring(0, 200),
+    fullArticleContent: `<p>${p.content || p.title}</p>`,
+    category:           'செய்தி',
+    readingTime:        '1 நிமிடம்',
+    sentiment:          'neutral',
+    tags:               [],
+  }));
 }
 
 async function processWithGemini(payload) {
@@ -392,7 +382,11 @@ async function generateNews() {
   console.log('═══════════════════════════════════════════════════');
   console.log('  The Kongu Times News Generator v2');
   console.log(`  ${new Date().toISOString()}`);
-  console.log(`  AI provider: ${AI_PROVIDER === 'openai' ? `OpenAI (${OPENAI_MODEL})` : `Gemini (${GEMINI_MODEL})`}`);
+  console.log(`  AI provider: ${
+    AI_PROVIDER === 'openai' ? `OpenAI (${OPENAI_MODEL})` :
+    AI_PROVIDER === 'gemini' ? `Gemini (${GEMINI_MODEL})` :
+    'none (passthrough — no rewriting)'
+  }`);
   console.log('═══════════════════════════════════════════════════');
 
   // Load cached data
@@ -515,9 +509,17 @@ async function generateNews() {
   // ── Write output ─────────────────────────────────────────────────────────
   if (!fs.existsSync(OUTPUT_DIR)) fs.mkdirSync(OUTPUT_DIR, { recursive: true });
 
+  // Drop feeds that are no longer in FEED_SOURCES (e.g. removed cities) so the
+  // JSON doesn't accumulate stale keys after the feed list changes.
+  const activeIds = new Set(FEED_SOURCES.map(s => s.id));
+  const feeds = {};
+  for (const id of Object.keys(allData)) {
+    if (activeIds.has(id)) feeds[id] = allData[id];
+  }
+
   const output = {
     updatedAt:   new Date().toISOString(),
-    feeds:       allData,
+    feeds,
     meta: {
       version:      2,
       totalSources: FEED_SOURCES.length,

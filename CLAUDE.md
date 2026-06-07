@@ -22,6 +22,7 @@ Local generation requires a `.env` file with **one** AI key: `OPENAI_API_KEY=sk-
 Both the CI script and the browser fallback pick a provider from env at startup:
 - `OPENAI_API_KEY` starts with `sk-` → OpenAI `gpt-4o-mini`
 - `GEMINI_API_KEY` or legacy `API_KEY` set → Gemini `gemini-2.5-flash`
+- none set (or `NO_AI=1`) → **passthrough mode**: copies RSS as-is, no rewriting, no tokens (for testing the pipeline locally for free — `NO_AI=1 npm run generate`)
 
 The two providers share `buildInstructions()` (the editorial prompt) and return the same article shape. Gemini uses native `responseSchema`; OpenAI uses `response_format: json_object` and returns `{ "articles": [...] }`. OpenAI is called via plain `fetch` (no SDK dependency).
 
@@ -29,7 +30,7 @@ The two providers share `buildInstructions()` (the editorial prompt) and return 
 `scripts/generate-news.js` — the entire pipeline in one file:
 1. Loads the existing `news.json` cache
 2. Prunes articles older than `KEEP_DAYS` (7)
-3. Fetches raw items from 18 RSS sources (Google News / BBC Tamil)
+3. Fetches raw items from 13 Google News RSS sources (5 categories + 8 Kongu districts)
 4. Deduplicates against the cache (by `link`), caps at `ITEMS_PER_FEED` new items
 5. Sends **only new** items to the active provider (`processBatch`) in batches of `AI_BATCH_SIZE`
 6. Merges results back into the cache, sorts by `pubDate`, trims to `CACHE_PER_FEED`
@@ -55,9 +56,7 @@ Static-first: `App.tsx` fetches `./data/news.json` on load. If the file is missi
 `EnhancedArticle` (see `types.ts`): AI fields (`headline`, `summary`, `fullArticleContent`, `category`, `sentiment`, `tags`, `readingTime`) plus raw fallback mirrors (`title`, `description`, `content`, `link`, `guid`, `pubDate`, `thumbnail`).
 
 ### News sources
-18 RSS feeds (no homepage scrapers — those only yielded title text and produced poor AI rewrites):
-- **Google News RSS** (primary, 17 feeds) — never blocks CI runners
-- **BBC Tamil RSS** (`world` feed) — premium Tamil source
+13 Google News RSS feeds — 5 categories (`top-news`, `tamil-nadu`, `india`, `sports`, `cinema`) + 8 Kongu-region districts (`coimbatore`, `erode`, `tiruppur`, `salem`, `namakkal`, `nilgiris`, `karur`, `dharmapuri`). No homepage scrapers (those only yielded title text → poor AI rewrites). Defined in `constants.ts` (UI) and `generate-news.js` `FEED_SOURCES` (CI).
 
 ### CI/CD
 `.github/workflows/update-news.yml` runs every 3 hours: install → generate → commit `news.json` to `main` → build → deploy to GitHub Pages. Secrets (set whichever provider you use): `OPENAI_API_KEY`, `GEMINI_API_KEY`, or legacy `API_KEY`.
