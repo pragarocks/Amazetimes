@@ -541,7 +541,14 @@ async function generateNews() {
   }
 }
 
-generateNews().catch(err => {
-  console.error('Unhandled fatal error:', err);
-  process.exit(1);
-});
+generateNews()
+  .then(() => {
+    // Explicitly exit: the AI HTTP client / keep-alive sockets keep Node's
+    // event loop alive, so the process would otherwise hang until CI times out
+    // (and the commit/push step would never run). The file is already written.
+    process.exit(0);
+  })
+  .catch(err => {
+    console.error('Unhandled fatal error:', err);
+    process.exit(1);
+  });
