@@ -34,9 +34,10 @@ if (!API_KEY) {
 const ai = new GoogleGenAI({ apiKey: API_KEY });
 const OUTPUT_DIR  = './public/data';
 const OUTPUT_FILE = path.join(OUTPUT_DIR, 'news.json');
-const ITEMS_PER_FEED = 20;   // max raw items fetched per source
-const CACHE_PER_FEED = 40;   // max cached articles kept per feed
-const AI_BATCH_SIZE  = 8;    // articles sent to Gemini per API call
+const ITEMS_PER_FEED = 5;    // max NEW items processed per run (keeps free-tier API costs low)
+const CACHE_PER_FEED = 30;   // max cached articles kept per feed
+const AI_BATCH_SIZE  = 5;    // articles sent to Gemini per API call
+const KEEP_DAYS      = 7;    // articles older than this are pruned from cache
 
 // ── Utilities ─────────────────────────────────────────────────────────────────
 
@@ -478,6 +479,20 @@ async function generateNews() {
   }
 
   const allData     = { ...(existingData.feeds || {}) };
+
+  // Prune articles older than KEEP_DAYS from every feed
+  const cutoffMs = Date.now() - KEEP_DAYS * 24 * 60 * 60 * 1000;
+  let prunedTotal = 0;
+  for (const feedId of Object.keys(allData)) {
+    const before = allData[feedId].length;
+    allData[feedId] = allData[feedId].filter(a => {
+      const ts = new Date(a.pubDate).getTime();
+      return isNaN(ts) || ts >= cutoffMs;
+    });
+    prunedTotal += before - allData[feedId].length;
+  }
+  if (prunedTotal > 0) console.log(`🗑  Pruned ${prunedTotal} articles older than ${KEEP_DAYS} days\n`);
+
   let successCount  = 0;
   let skipCount     = 0;
   let failCount     = 0;
@@ -507,10 +522,12 @@ async function generateNews() {
         console.log(`│  ✓ Scraped ${rawItems.length} items`);
       }
 
-      // ── Step 2: Deduplicate against cache ────────────────────────────────
+      // ── Step 2: Deduplicate against cache, cap at ITEMS_PER_FEED new items ─
       const existing     = allData[source.id] || [];
       const existingLinks = new Set(existing.map(e => e.link));
-      const newItems     = rawItems.filter(i => !existingLinks.has(i.link));
+      const newItems     = rawItems
+        .filter(i => !existingLinks.has(i.link))
+        .slice(0, ITEMS_PER_FEED);   // only process the N newest items per run
 
       if (newItems.length === 0) {
         console.log(`│  ⏭  No new articles — skipping AI step`);

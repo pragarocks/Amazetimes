@@ -9,12 +9,6 @@ import { EnhancedArticle } from './types';
 import { fetchRSSFeed } from './services/rssService';
 import { rewriteNewsWithGemini } from './services/geminiService';
 
-// Feeds whose URLs are browser-accessible via CORS proxies (RSS sources).
-// Scrape-type feeds only work server-side; in live mode we show a friendly message.
-const LIVE_MODE_SUPPORTED_IDS = new Set(
-  FEED_SOURCES.map(f => f.id)
-);
-
 const App: React.FC = () => {
   const [selectedFeedId, setSelectedFeedId] = useState<string>(FEED_SOURCES[0].id);
   const [allFeeds, setAllFeeds] = useState<Record<string, EnhancedArticle[]>>({});
@@ -22,7 +16,6 @@ const App: React.FC = () => {
   const [generating, setGenerating] = useState<boolean>(false);
   const [lastUpdated, setLastUpdated] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [isDropdownOpen, setIsDropdownOpen] = useState<boolean>(false);
   const [selectedArticle, setSelectedArticle] = useState<EnhancedArticle | null>(null);
 
   const generateLiveFeed = async (feedId: string) => {
@@ -31,28 +24,13 @@ const App: React.FC = () => {
     try {
       const source = FEED_SOURCES.find(f => f.id === feedId);
       if (!source) return;
-
-      if (!LIVE_MODE_SUPPORTED_IDS.has(feedId)) {
-        setError("இந்த பிரிவு சேவையகம் மூலம் மட்டுமே இயங்கும். சிறிது நேரம் கழித்து மீண்டும் முயற்சிக்கவும்.");
-        return;
-      }
-
       const rssData = await fetchRSSFeed(source.url);
-      const itemsToProcess = rssData.items.slice(0, 6);
-      const aiProcessed = await rewriteNewsWithGemini(itemsToProcess);
-
-      if (aiProcessed.length === 0) {
-        throw new Error("AI செய்திகளை தயாரிக்கவில்லை. API key சரியாக உள்ளதா என சரிபாருங்கள்.");
-      }
-
-      setAllFeeds(prev => ({
-        ...prev,
-        [feedId]: aiProcessed
-      }));
+      const aiProcessed = await rewriteNewsWithGemini(rssData.items.slice(0, 5));
+      if (aiProcessed.length === 0) throw new Error('AI செய்திகளை உருவாக்கவில்லை.');
+      setAllFeeds(prev => ({ ...prev, [feedId]: aiProcessed }));
       setLastUpdated(new Date().toISOString());
     } catch (err: any) {
-      console.error("Live Generation Error:", err);
-      setError(err.message || "நேரடி செய்தி சேகரிப்பில் சிக்கல். மீண்டும் முயற்சிக்கவும்.");
+      setError(err.message || 'நேரடி செய்தி சேகரிப்பில் சிக்கல்.');
     } finally {
       setGenerating(false);
       setLoading(false);
@@ -63,207 +41,244 @@ const App: React.FC = () => {
     setLoading(true);
     setError(null);
     try {
-      // Fetch news.json relative to the current location
-      // Using './data/news.json' ensures it works in subfolders or root
       const response = await fetch('./data/news.json');
-      
       if (!response.ok) {
-        if (response.status === 404) {
-          console.log("Static file missing. Switching to Live Generation Mode...");
-          generateLiveFeed(selectedFeedId);
-          return;
-        }
-        throw new Error("செய்திகளைப் பதிவிறக்க முடியவில்லை.");
+        if (response.status === 404) { generateLiveFeed(selectedFeedId); return; }
+        throw new Error('செய்திகளைப் பதிவிறக்க முடியவில்லை.');
       }
-      
       const data = await response.json();
       setAllFeeds(data.feeds || {});
       setLastUpdated(data.updatedAt);
-    } catch (err: any) {
-      console.error("Data fetch error:", err);
+    } catch {
       generateLiveFeed(selectedFeedId);
     } finally {
       setLoading(false);
     }
-  }, [selectedFeedId]);
-
-  useEffect(() => {
-    fetchStaticData();
   }, []);
 
+  useEffect(() => { fetchStaticData(); }, []);
   useEffect(() => {
-    if (!loading && !allFeeds[selectedFeedId]) {
-      generateLiveFeed(selectedFeedId);
-    }
+    if (!loading && !allFeeds[selectedFeedId]) generateLiveFeed(selectedFeedId);
   }, [selectedFeedId, allFeeds, loading]);
 
   const articles = allFeeds[selectedFeedId] || [];
-
-  const t = {
-    more: "கூடுதல் பிரிவுகள்",
-    updated: "புதுப்பிக்கப்பட்டது",
-    refresh: "புதிய செய்திகள்",
-    tryAgain: "மீண்டும் முயற்சி செய்",
-    noNews: "செய்திகள் தயாராகி வருகின்றன...",
-    powered: "Gemini AI மூலம் இயக்கப்படுகிறது",
-    generating: "செயற்கை நுண்ணறிவு செய்திகளைத் தொகுக்கிறது...",
-    liveMode: "நேரடி ஏஐ செய்தி"
-  };
-
-  const visibleFeeds = FEED_SOURCES.slice(0, 5);
-  const hiddenFeeds = FEED_SOURCES.slice(5);
-  const isHiddenActive = hiddenFeeds.some(f => f.id === selectedFeedId);
+  const heroArticle   = articles[0] ?? null;
+  const sideArticles  = articles.slice(1, 5);
+  const trendingItems = articles.slice(5, 9);
+  const latestItems   = articles.slice(9, 18);
+  const remainingItems = articles.slice(18);
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900 font-sans selection:bg-brand-100 selection:text-brand-900">
-      <Header />
-
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        
-        <div className="mb-8 flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div className="flex flex-wrap items-center gap-2 relative z-30">
-            {visibleFeeds.map(source => (
-              <button
-                key={source.id}
-                onClick={() => setSelectedFeedId(source.id)}
-                className={`whitespace-nowrap px-4 py-2 rounded-full text-sm font-medium transition-all duration-200 ${
-                  selectedFeedId === source.id
-                    ? 'bg-brand-600 text-white shadow-lg shadow-brand-500/30'
-                    : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
-                }`}
-              >
-                {source.name}
-              </button>
-            ))}
-
-            {hiddenFeeds.length > 0 && (
-              <div className="relative">
-                <button
-                  onClick={() => setIsDropdownOpen(!isDropdownOpen)}
-                  className={`whitespace-nowrap px-4 py-2 rounded-full text-sm font-medium transition-all duration-200 flex items-center gap-1 ${
-                    isHiddenActive || isDropdownOpen
-                      ? 'bg-brand-600 text-white shadow-lg shadow-brand-500/30'
-                      : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-50'
-                  }`}
-                >
-                  {t.more}
-                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className={`w-4 h-4 transition-transform duration-200 ${isDropdownOpen ? 'rotate-180' : ''}`}>
-                    <path fillRule="evenodd" d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z" clipRule="evenodd" />
-                  </svg>
-                </button>
-
-                {isDropdownOpen && (
-                  <>
-                    <div className="fixed inset-0 z-10 cursor-default" onClick={() => setIsDropdownOpen(false)}></div>
-                    <div className="absolute left-0 mt-2 w-72 bg-white border border-slate-200 rounded-xl shadow-2xl z-20 p-2 grid grid-cols-2 gap-1 max-h-96 overflow-y-auto">
-                      {hiddenFeeds.map(source => (
-                        <button
-                          key={source.id}
-                          onClick={() => {
-                            setSelectedFeedId(source.id);
-                            setIsDropdownOpen(false);
-                          }}
-                          className={`px-3 py-2 rounded-lg text-sm text-left transition-colors truncate ${
-                            selectedFeedId === source.id
-                              ? 'bg-brand-50 text-brand-700 font-semibold'
-                              : 'text-slate-600 hover:bg-slate-50'
-                          }`}
-                        >
-                          {source.name}
-                        </button>
-                      ))}
-                    </div>
-                  </>
-                )}
-              </div>
-            )}
-          </div>
-
-          <div className="flex items-center gap-3 text-sm text-slate-500 ml-auto md:ml-0">
-             {generating && (
-               <span className="flex items-center gap-2 text-brand-600 animate-pulse font-medium">
-                 <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24">
-                   <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none"></circle>
-                   <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                 </svg>
-                 {t.generating}
-               </span>
-             )}
-             {lastUpdated && !generating && (
-               <span className="hidden sm:inline bg-slate-100 px-3 py-1 rounded-full border border-slate-200 text-[10px] font-bold uppercase tracking-tight">
-                 {t.updated}: {new Date(lastUpdated).toLocaleTimeString('ta-IN')}
-               </span>
-             )}
-             <button 
-               onClick={() => generateLiveFeed(selectedFeedId)}
-               className="p-2 hover:bg-slate-200 rounded-full transition-colors"
-               title={t.refresh}
-             >
-                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor" className={`w-5 h-5 ${generating ? 'animate-spin text-brand-500' : 'text-slate-600'}`}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99" />
-                </svg>
-             </button>
-          </div>
-        </div>
-
-        {error && !generating && (
-          <div className="bg-red-50 border border-red-200 text-red-700 px-6 py-8 rounded-xl mb-8 text-center shadow-sm">
-            <p className="font-bold mb-4">{error}</p>
-            <button onClick={() => generateLiveFeed(selectedFeedId)} className="px-6 py-2 bg-red-600 text-white rounded-full text-sm font-bold shadow-lg shadow-red-500/30">
-              {t.tryAgain}
-            </button>
-          </div>
-        )}
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 lg:gap-8">
-          {loading || generating ? (
-            Array.from({ length: 6 }).map((_, i) => <SkeletonCard key={i} />)
-          ) : (
-            articles.map((article, idx) => (
-              <ArticleCard 
-                key={`${article.guid}-${idx}`} 
-                article={article} 
-                onReadMore={setSelectedArticle}
-              />
-            ))
-          )}
-        </div>
-        
-        {!loading && !generating && !error && articles.length === 0 && (
-            <div className="text-center py-24 bg-white rounded-3xl border-2 border-dashed border-slate-200">
-                <div className="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center mx-auto mb-4">
-                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-8 h-8 text-slate-300">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M12 7.5h1.5m-1.5 3h1.5m-7.5 3h7.5m-7.5 3h7.5m3-9h3.375c.621 0 1.125.504 1.125 1.125V18a2.25 2.25 0 01-2.25 2.25M16.5 7.5V18a2.25 2.25 0 002.25 2.25M16.5 7.5V4.875c0-.621-.504-1.125-1.125-1.125H4.125C3.504 3.75 3 4.254 3 4.875V18a2.25 2.25 0 002.25 2.25h13.5M6 7.5h3v3H6v-3z" />
-                  </svg>
-                </div>
-                <p className="text-slate-400 font-medium italic">{t.noNews}</p>
-                <button 
-                  onClick={() => generateLiveFeed(selectedFeedId)}
-                  className="mt-6 text-brand-600 font-bold hover:underline"
-                >
-                  நேரடியாகச் செய்திகளை உருவாக்கவும்
-                </button>
-            </div>
-        )}
-
-      </main>
-
-      <ArticleModal 
-        article={selectedArticle} 
-        onClose={() => setSelectedArticle(null)} 
+    <div className="min-h-screen bg-white text-slate-900">
+      <Header
+        selectedFeedId={selectedFeedId}
+        onSelectFeed={setSelectedFeedId}
+        lastUpdated={lastUpdated}
+        onRefresh={() => generateLiveFeed(selectedFeedId)}
+        generating={generating}
       />
 
-      <footer className="bg-white border-t border-slate-200 py-12 mt-12">
-        <div className="max-w-7xl mx-auto px-4 text-center">
-          <div className="flex justify-center items-center gap-2 mb-4">
-             <div className="w-6 h-6 bg-brand-600 rounded flex items-center justify-center text-white font-serif font-bold text-xs">A</div>
-             <span className="font-serif font-bold text-slate-900">Amazetime<span className="text-brand-600">.in</span></span>
+      <main>
+        {/* Breaking ticker */}
+        {heroArticle && !loading && !generating && (
+          <div className="max-w-[1280px] mx-auto px-4 md:px-6 pt-3 pb-1">
+            <div className="flex items-center gap-2 animate-fade-up">
+              <span className="flex items-center gap-1 text-white text-[10px] font-black uppercase tracking-wider px-2.5 py-0.5 rounded animate-pulse"
+                    style={{ background: 'hsl(0,84%,60%)' }}>
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-2.5 h-2.5">
+                  <path fillRule="evenodd" d="M11.3 1.046A1 1 0 0112 2v5h4a1 1 0 01.82 1.573l-7 10A1 1 0 018 18v-5H4a1 1 0 01-.82-1.573l7-10a1 1 0 011.12-.38z" clipRule="evenodd" />
+                </svg>
+                முக்கிய
+              </span>
+              <p className="text-sm font-semibold truncate font-tamil">{heroArticle.headline || heroArticle.title}</p>
+            </div>
           </div>
-          <p className="text-slate-400 text-xs tracking-wide">
-            © {new Date().getFullYear()} Amazetime. {t.powered}.
+        )}
+
+        {/* Hero Grid */}
+        <section className="max-w-[1280px] mx-auto px-4 md:px-6 py-4">
+          {loading || generating ? (
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
+              <div className="lg:col-span-8"><div className="skeleton-pulse aspect-video" /></div>
+              <div className="lg:col-span-4 flex flex-col gap-3">
+                {[...Array(4)].map((_, i) => <div key={i} className="skeleton-pulse h-20 rounded-xl" />)}
+              </div>
+            </div>
+          ) : error ? (
+            <div className="rounded-xl bg-red-50 border border-red-200 text-red-700 px-6 py-10 text-center">
+              <p className="font-bold mb-4 font-tamil">{error}</p>
+              <button
+                onClick={() => generateLiveFeed(selectedFeedId)}
+                className="px-6 py-2 text-white rounded-full text-sm font-bold"
+                style={{ background: 'hsl(0,84%,60%)' }}
+              >
+                மீண்டும் முயற்சி
+              </button>
+            </div>
+          ) : articles.length === 0 ? (
+            <div className="text-center py-20 text-slate-400 font-tamil">
+              <p className="text-lg mb-4">செய்திகள் தயாராகி வருகின்றன...</p>
+              <button onClick={() => generateLiveFeed(selectedFeedId)}
+                      className="text-orange-600 font-bold hover:underline">
+                நேரடியாகச் செய்திகளை உருவாக்கவும்
+              </button>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
+              {/* Main hero */}
+              {heroArticle && (
+                <div className="lg:col-span-8 animate-fade-up">
+                  <ArticleCard
+                    article={heroArticle}
+                    onReadMore={setSelectedArticle}
+                    variant="hero"
+                    index={0}
+                  />
+                </div>
+              )}
+
+              {/* Side compact list */}
+              <div className="lg:col-span-4 flex flex-col gap-2">
+                {sideArticles.map((article, i) => (
+                  <ArticleCard
+                    key={article.guid || article.link}
+                    article={article}
+                    onReadMore={setSelectedArticle}
+                    variant="compact"
+                    index={i + 1}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
+        </section>
+
+        {/* Trending strip */}
+        {trendingItems.length > 0 && !loading && !generating && (
+          <section className="max-w-[1280px] mx-auto px-4 md:px-6 py-4">
+            <div className="flex items-center gap-2 mb-3 animate-fade-up">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"
+                   className="w-4 h-4" style={{ color: 'hsl(22,90%,47%)' }}>
+                <path fillRule="evenodd" d="M12.395 2.553a1 1 0 00-1.45-.385c-.345.23-.614.558-.822.88-.214.33-.403.713-.57 1.116-.334.804-.614 1.768-.84 2.734a31.365 31.365 0 00-.613 3.58 2.64 2.64 0 01-.945-1.067c-.328-.68-.398-1.534-.398-2.654A1 1 0 005.05 6.05 6.981 6.981 0 003 11a7 7 0 1011.95-4.95c-.592-.591-.98-.985-1.348-1.467-.363-.476-.724-1.063-1.207-2.03zM12.12 15.12A3 3 0 017 13s.879.5 2.5.5c0-1 .5-4 1.25-4.5.5 1 .786 1.293 1.371 1.879A2.99 2.99 0 0113 13a2.99 2.99 0 01-.879 2.121z" clipRule="evenodd" />
+              </svg>
+              <h2 className="section-heading text-lg">இப்போது பிரபலமானவை</h2>
+            </div>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              {trendingItems.map((article, i) => (
+                <button
+                  key={article.guid || article.link}
+                  onClick={() => setSelectedArticle(article)}
+                  className="flex items-start gap-2.5 p-3 rounded-xl hover:bg-slate-50 transition-colors animate-fade-up text-left group"
+                  style={{ animationDelay: `${i * 0.06}s` }}
+                >
+                  <span className="font-display text-2xl font-black leading-none mt-0.5"
+                        style={{ color: 'rgba(220,90,40,0.2)' }}>
+                    {String(i + 1).padStart(2, '0')}
+                  </span>
+                  <div>
+                    <h3 className="font-display text-xs font-bold leading-snug line-clamp-2 group-hover:text-orange-600 transition-colors font-tamil">
+                      {article.headline || article.title}
+                    </h3>
+                    {article.category && (
+                      <span className="category-tag mt-1">{article.category}</span>
+                    )}
+                  </div>
+                </button>
+              ))}
+            </div>
+          </section>
+        )}
+
+        {/* Latest news grid */}
+        {latestItems.length > 0 && !loading && !generating && (
+          <section className="max-w-[1280px] mx-auto px-4 md:px-6 py-6">
+            <div className="flex items-center justify-between mb-4 animate-fade-up">
+              <h2 className="section-heading text-lg">சமீபத்திய செய்திகள்</h2>
+              <span className="text-xs font-semibold flex items-center gap-1"
+                    style={{ color: 'hsl(22,90%,47%)' }}>
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" className="w-3.5 h-3.5">
+                  <path fillRule="evenodd" d="M12 7a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0V8.414l-4.293 4.293a1 1 0 01-1.414 0L8 10.414l-4.293 4.293a1 1 0 01-1.414-1.414l5-5a1 1 0 011.414 0L11 10.586 14.586 7H12z" clipRule="evenodd" />
+                </svg>
+                அனைத்தும்
+              </span>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              {latestItems.map((article, i) => (
+                <ArticleCard
+                  key={article.guid || article.link}
+                  article={article}
+                  onReadMore={setSelectedArticle}
+                  variant="default"
+                  index={i}
+                />
+              ))}
+            </div>
+          </section>
+        )}
+
+        {/* Remaining articles (overflow) */}
+        {remainingItems.length > 0 && !loading && !generating && (
+          <section className="max-w-[1280px] mx-auto px-4 md:px-6 pb-8">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              {remainingItems.map((article, i) => (
+                <ArticleCard
+                  key={article.guid || article.link}
+                  article={article}
+                  onReadMore={setSelectedArticle}
+                  variant="default"
+                  index={i}
+                />
+              ))}
+            </div>
+          </section>
+        )}
+
+        {/* Skeleton grid (loading) */}
+        {(loading || generating) && (
+          <section className="max-w-[1280px] mx-auto px-4 md:px-6 py-6">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              {[...Array(6)].map((_, i) => <SkeletonCard key={i} />)}
+            </div>
+          </section>
+        )}
+      </main>
+
+      {/* Footer */}
+      <footer className="site-footer">
+        <div className="max-w-[1280px] mx-auto flex flex-col md:flex-row items-center justify-between gap-4">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-lg flex items-center justify-center text-white font-display font-black text-base"
+                 style={{ background: 'linear-gradient(135deg, hsl(22,90%,47%), hsl(336,82%,50%))' }}>
+              அ
+            </div>
+            <div>
+              <div className="font-display font-bold text-slate-900 text-base">
+                Amazetime<span style={{ color: 'hsl(22,90%,47%)' }}>.in</span>
+              </div>
+              <div className="text-[10px] text-slate-400">Gemini AI மூலம் இயக்கப்படுகிறது</div>
+            </div>
+          </div>
+          <p className="text-xs text-slate-400 text-center">
+            © {new Date().getFullYear()} Amazetime. அனைத்து உரிமைகளும் பாதுகாக்கப்பட்டவை.
           </p>
+          <div className="flex items-center gap-3 text-slate-400">
+            {/* Social placeholders */}
+            {[
+              { label: 'Facebook', path: 'M18 2h-3a5 5 0 00-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 011-1h3z' },
+              { label: 'Twitter', path: 'M23 3a10.9 10.9 0 01-3.14 1.53 4.48 4.48 0 00-7.86 3v1A10.66 10.66 0 013 4s-4 9 5 13a11.64 11.64 0 01-7 2c9 5 20 0 20-11.5a4.5 4.5 0 00-.08-.83A7.72 7.72 0 0023 3z' },
+            ].map(s => (
+              <a key={s.label} href="#" aria-label={s.label}
+                 className="hover:text-orange-600 transition-colors">
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4">
+                  <path strokeLinecap="round" strokeLinejoin="round" d={s.path} />
+                </svg>
+              </a>
+            ))}
+          </div>
         </div>
       </footer>
+
+      <ArticleModal article={selectedArticle} onClose={() => setSelectedArticle(null)} />
     </div>
   );
 };
