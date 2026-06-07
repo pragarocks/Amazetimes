@@ -30,7 +30,7 @@ export const rewriteNewsWithGemini = async (items: RSSItem[]): Promise<EnhancedA
 
   if (payload.length === 0) return [];
 
-  const prompt = `You are the Chief Editor for 'Amazetime.in', a premium Tamil digital news platform.
+  const prompt = `You are the Chief Editor for 'The Kongu Times', a premium Tamil digital news platform.
 
 TASK: Rewrite the following ${payload.length} news items into high-quality, professional Tamil journalism.
 

@@ -57,9 +57,9 @@ export const ArticleModal: React.FC<ArticleModalProps> = ({ article, onClose }) 
               <div className="flex items-center gap-2">
                 <div className="w-7 h-7 rounded-full flex items-center justify-center text-[10px] font-bold text-white"
                      style={{ background: 'linear-gradient(135deg, hsl(22,90%,47%), hsl(336,82%,50%))' }}>
-                  AZ
+                  KT
                 </div>
-                <span className="font-semibold text-slate-700">Amazetime Editorial</span>
+                <span className="font-semibold text-slate-700">The Kongu Times Editorial</span>
                 <span className="text-slate-300">·</span>
                 <span>{new Date(article.pubDate).toLocaleDateString('ta-IN', { day: 'numeric', month: 'long', year: 'numeric' })}</span>
               </div>

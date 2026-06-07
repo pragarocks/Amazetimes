@@ -1,5 +1,5 @@
 /**
- * Amazetime News Generator v2
+ * The Kongu Times News Generator v2
  * ─────────────────────────────────────────────────────────────────────────────
  * Sources (in order of reliability):
  *   1. Google News RSS  — primary for every category, never blocks IPs
@@ -409,7 +409,7 @@ async function processWithGemini(items) {
   const response = await withRetry(
     () => ai.models.generateContent({
       model: 'gemini-2.5-flash',
-      contents: `You are the Chief Editor for 'Amazetime.in', a premium Tamil digital news platform.
+      contents: `You are the Chief Editor for 'The Kongu Times', a premium Tamil digital news platform.
 
 TASK: Rewrite the following ${payload.length} news items into high-quality, professional Tamil journalism.
 
@@ -462,7 +462,7 @@ DATA: ${JSON.stringify(payload)}`,
 
 async function generateNews() {
   console.log('═══════════════════════════════════════════════════');
-  console.log('  Amazetime News Generator v2');
+  console.log('  The Kongu Times News Generator v2');
   console.log(`  ${new Date().toISOString()}`);
   console.log('═══════════════════════════════════════════════════');
 

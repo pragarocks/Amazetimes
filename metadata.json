@@ -1,5 +1,5 @@
 {
-  "name": "Amazetime.in",
+  "name": "The Kongu Times",
   "description": "AI-powered Tamil news aggregator. Scrapes Google News RSS, BBC Tamil, Dinamalar, and Daily Thanthi — rewrites all content in professional Tamil using Gemini AI — auto-deploys to GitHub Pages every 3 hours.",
   "requestFramePermissions": []
 }
