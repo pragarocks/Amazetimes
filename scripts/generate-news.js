@@ -1,25 +1,21 @@
 /**
  * The Kongu Times News Generator v2
  * ─────────────────────────────────────────────────────────────────────────────
- * Sources (in order of reliability):
- *   1. Google News RSS  — primary for every category, never blocks IPs
+ * Sources (all RSS — public endpoints that never block cloud-runner IPs):
+ *   1. Google News RSS  — primary for every category & district
  *   2. BBC Tamil RSS    — high-quality world / national news in Tamil
- *   3. OneIndia Tamil RSS — additional regional coverage
- *   4. Dinamalar scrape — direct Tamil daily (cheerio + axios)
- *   5. Daily Thanthi scrape — direct Tamil daily (cheerio + axios)
  *
- * Why not News18 Tamil RSS?
- *   News18 Tamil actively blocks GitHub Actions / cloud runner IP ranges
- *   with 403 responses. Google News RSS, BBC, and direct scraping with
- *   proper browser-like headers do NOT have this restriction.
+ * Why not News18 Tamil RSS or homepage scraping?
+ *   News18 Tamil blocks GitHub Actions IP ranges (403). Homepage scrapers
+ *   (Dinamalar/Daily Thanthi) only yield headline text with no article body,
+ *   which produces low-quality AI rewrites — so we rely solely on RSS feeds
+ *   that carry real article snippets.
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
 import 'dotenv/config';
 import { GoogleGenAI, Type } from "@google/genai";
 import Parser from 'rss-parser';
-import * as cheerio from 'cheerio';
-import axios from 'axios';
 import fs from 'fs';
 import path from 'path';
 
@@ -71,7 +67,7 @@ async function withRetry(fn, retries = 3, baseDelayMs = 1500) {
   }
 }
 
-// Rotate user-agents so scraped sites see a normal browser
+// Rotate user-agents so RSS endpoints see a normal browser
 const USER_AGENTS = [
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
   'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
@@ -80,27 +76,9 @@ const USER_AGENTS = [
 ];
 const randomUA = () => USER_AGENTS[Math.floor(Math.random() * USER_AGENTS.length)];
 
-/** Shared axios instance with browser-like headers */
-const httpClient = axios.create({
-  timeout: 20000,
-  headers: {
-    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-    'Accept-Language': 'ta-IN,ta;q=0.9,en-IN;q=0.8,en;q=0.7',
-    'Accept-Encoding': 'gzip, deflate, br',
-    'Cache-Control': 'no-cache',
-    'Pragma': 'no-cache',
-    'Connection': 'keep-alive',
-    'Upgrade-Insecure-Requests': '1',
-    'Sec-Fetch-Dest': 'document',
-    'Sec-Fetch-Mode': 'navigate',
-    'Sec-Fetch-Site': 'none',
-  },
-});
-
 // ── Feed Sources ──────────────────────────────────────────────────────────────
 //
-// type: 'rss'    → fetched with rss-parser (standard RSS/Atom XML)
-// type: 'scrape' → fetched with axios + cheerio HTML parsing
+// Every source is an RSS feed fetched with rss-parser (Google News / BBC Tamil).
 //
 // For every RSS source we use Google News RSS search queries or BBC Tamil.
 // These are PUBLIC endpoints that do not block crawler IPs.
@@ -224,22 +202,6 @@ const FEED_SOURCES = [
     type: 'rss',
     url: 'https://news.google.com/rss/search?q=kanyakumari+news+tamilnadu&hl=ta-IN&gl=IN&ceid=IN:ta',
   },
-
-  // ── Direct web scraping sources ──────────────────────────────────────────
-  {
-    id: 'dinamalar',
-    name: 'தினமலர்',
-    type: 'scrape',
-    scraper: 'dinamalar',
-    url: 'https://www.dinamalar.com/',
-  },
-  {
-    id: 'thanthi',
-    name: 'தினத்தந்தி',
-    type: 'scrape',
-    scraper: 'thanthi',
-    url: 'https://www.dailythanthi.com/',
-  },
 ];
 
 // ── RSS Fetching ──────────────────────────────────────────────────────────────
@@ -305,103 +267,6 @@ function normaliseRSSItem(item) {
     thumbnail:   extractThumbnail(item),
   };
 }
-
-// ── Web Scrapers ──────────────────────────────────────────────────────────────
-
-/**
- * Scrape Dinamalar (dinamalar.com) — one of Tamil Nadu's largest dailies.
- * Falls back gracefully if the site structure changes.
- */
-async function scrapeDinamalar(limit = 15) {
-  const response = await withRetry(
-    () => httpClient.get('https://www.dinamalar.com/', { headers: { 'User-Agent': randomUA() } }),
-    2, 2000
-  );
-
-  const $ = cheerio.load(response.data);
-  const articles = [];
-  const seen = new Set();
-
-  // Try multiple selectors in priority order
-  const selectors = [
-    'h1 a', 'h2 a', 'h3 a',
-    '.breakingnews a', '.top-news a', '.main-news a',
-    '.news-heading a', '.story-title a', '.newshead a',
-    'article a[href*="/news"]',
-  ];
-
-  for (const sel of selectors) {
-    $(sel).each((_, el) => {
-      const $el = $(el);
-      let href  = ($el.attr('href') || '').trim();
-      const title = $el.text().trim().replace(/\s+/g, ' ');
-
-      if (!title || title.length < 10) return;
-      if (href.startsWith('/'))  href = `https://www.dinamalar.com${href}`;
-      if (!href.startsWith('http')) return;
-      if (seen.has(href)) return;
-
-      seen.add(href);
-      articles.push({
-        link: href, guid: href, title,
-        content: title, description: title,
-        pubDate: new Date().toISOString(), thumbnail: '',
-      });
-    });
-    if (articles.length >= limit) break;
-  }
-
-  return articles.slice(0, limit);
-}
-
-/**
- * Scrape Daily Thanthi (dailythanthi.com) — second-largest Tamil daily.
- */
-async function scrapeDailyThanthi(limit = 15) {
-  const response = await withRetry(
-    () => httpClient.get('https://www.dailythanthi.com/', { headers: { 'User-Agent': randomUA() } }),
-    2, 2000
-  );
-
-  const $ = cheerio.load(response.data);
-  const articles = [];
-  const seen = new Set();
-
-  const selectors = [
-    'h1 a', 'h2 a', 'h3 a',
-    '.news-title a', '.listing-news a', '.main-news-title a',
-    '.story-head a', 'article h2 a', 'article h3 a',
-    'a[href*="/news/"]', 'a[href*="/article/"]',
-  ];
-
-  for (const sel of selectors) {
-    $(sel).each((_, el) => {
-      const $el = $(el);
-      let href  = ($el.attr('href') || '').trim();
-      const title = $el.text().trim().replace(/\s+/g, ' ');
-
-      if (!title || title.length < 10) return;
-      if (href.startsWith('/'))  href = `https://www.dailythanthi.com${href}`;
-      if (!href.startsWith('http')) return;
-      if (seen.has(href)) return;
-
-      seen.add(href);
-      articles.push({
-        link: href, guid: href, title,
-        content: title, description: title,
-        pubDate: new Date().toISOString(), thumbnail: '',
-      });
-    });
-    if (articles.length >= limit) break;
-  }
-
-  return articles.slice(0, limit);
-}
-
-const SCRAPERS = {
-  dinamalar: scrapeDinamalar,
-  thanthi:   scrapeDailyThanthi,
-};
 
 // ── AI Processing (provider-agnostic) ──────────────────────────────────────────
 
@@ -565,26 +430,15 @@ async function generateNews() {
     console.log(`\n┌─ [${source.id}] ${source.name}`);
 
     try {
-      // ── Step 1: Fetch raw items ──────────────────────────────────────────
-      let rawItems = [];
+      // ── Step 1: Fetch raw items (all sources are Google News / BBC RSS) ──
+      console.log(`│  📡 RSS: ${source.url.substring(0, 80)}...`);
+      const feed = await fetchRSSSource(source);
+      let rawItems = feed.items
+        .slice(0, ITEMS_PER_FEED)
+        .map(normaliseRSSItem)
+        .filter(i => i.link && i.title);
 
-      if (source.type === 'rss') {
-        console.log(`│  📡 RSS: ${source.url.substring(0, 80)}...`);
-        const feed = await fetchRSSSource(source);
-        rawItems = feed.items
-          .slice(0, ITEMS_PER_FEED)
-          .map(normaliseRSSItem)
-          .filter(i => i.link && i.title);
-
-        console.log(`│  ✓ Fetched ${rawItems.length} items`);
-
-      } else if (source.type === 'scrape') {
-        console.log(`│  🕷️  Scraping: ${source.url}`);
-        const scraper = SCRAPERS[source.scraper];
-        if (!scraper) throw new Error(`Unknown scraper: ${source.scraper}`);
-        rawItems = await scraper(ITEMS_PER_FEED);
-        console.log(`│  ✓ Scraped ${rawItems.length} items`);
-      }
+      console.log(`│  ✓ Fetched ${rawItems.length} items`);
 
       // ── Step 2: Deduplicate against cache, cap at ITEMS_PER_FEED new items ─
       const existing     = allData[source.id] || [];

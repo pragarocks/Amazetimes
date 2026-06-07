@@ -29,7 +29,7 @@ The two providers share `buildInstructions()` (the editorial prompt) and return 
 `scripts/generate-news.js` — the entire pipeline in one file:
 1. Loads the existing `news.json` cache
 2. Prunes articles older than `KEEP_DAYS` (7)
-3. Fetches raw items from 20 sources (RSS or cheerio scrape)
+3. Fetches raw items from 18 RSS sources (Google News / BBC Tamil)
 4. Deduplicates against the cache (by `link`), caps at `ITEMS_PER_FEED` new items
 5. Sends **only new** items to the active provider (`processBatch`) in batches of `AI_BATCH_SIZE`
 6. Merges results back into the cache, sorts by `pubDate`, trims to `CACHE_PER_FEED`
@@ -44,7 +44,7 @@ Key constants at the top of the script:
 ### Frontend subsystem (React, browser)
 Static-first: `App.tsx` fetches `./data/news.json` on load. If the file is missing or stale, it falls back to live mode: `services/rssService.ts` fetches RSS via CORS proxies, then `services/geminiService.ts` rewrites items in the browser.
 
-`constants.ts` is the single source of truth for all 20 feed IDs, Tamil names, and URLs used by both the browser live mode and (separately) the generation script. **Both places must be updated when adding a feed.**
+`constants.ts` (browser live mode) and the `FEED_SOURCES` array in `generate-news.js` (CI) each list the feed IDs, Tamil names, and URLs. **Both places must be updated when adding a feed.**
 
 ### Data shape
 `public/data/news.json`:
@@ -55,10 +55,9 @@ Static-first: `App.tsx` fetches `./data/news.json` on load. If the file is missi
 `EnhancedArticle` (see `types.ts`): AI fields (`headline`, `summary`, `fullArticleContent`, `category`, `sentiment`, `tags`, `readingTime`) plus raw fallback mirrors (`title`, `description`, `content`, `link`, `guid`, `pubDate`, `thumbnail`).
 
 ### News sources
-20 feeds split across three types:
-- **Google News RSS** (primary, 18 feeds) — never blocks CI runners
+18 RSS feeds (no homepage scrapers — those only yielded title text and produced poor AI rewrites):
+- **Google News RSS** (primary, 17 feeds) — never blocks CI runners
 - **BBC Tamil RSS** (`world` feed) — premium Tamil source
-- **Cheerio scrapers** (`dinamalar`, `thanthi`) — use rotating User-Agents + exponential backoff
 
 ### CI/CD
 `.github/workflows/update-news.yml` runs every 3 hours: install → generate → commit `news.json` to `main` → build → deploy to GitHub Pages. Secrets (set whichever provider you use): `OPENAI_API_KEY`, `GEMINI_API_KEY`, or legacy `API_KEY`.
