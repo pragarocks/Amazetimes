@@ -51,11 +51,11 @@ jobs:
       # ── Commit updated news.json ───────────────────────────────────────────
       - name: Commit and Push Data
         run: |
-          git config --global user.name  "Amazetime Bot"
-          git config --global user.email "bot@amazetime.in"
+          git config --global user.name  "Kongu Times Bot"
+          git config --global user.email "bot@kongutimes.in"
           git add public/data/news.json
           git diff --cached --quiet || git commit -m "chore: automated news update [skip ci]"
-          git push origin master
+          git push origin HEAD:main
 
       # ── Build and deploy to GitHub Pages ──────────────────────────────────
       - name: Setup Pages
