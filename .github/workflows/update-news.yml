@@ -45,6 +45,11 @@ jobs:
       - name: Generate News Data
         run: npm run generate
         env:
+          # Provider auto-selected in generate-news.js (OpenAI wins if set):
+          #   OPENAI_API_KEY (sk-...) → gpt-4o-mini
+          #   GEMINI_API_KEY / API_KEY → gemini-2.5-flash
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           API_KEY: ${{ secrets.API_KEY }}
         timeout-minutes: 15
 
@@ -64,6 +69,8 @@ jobs:
       - name: Build website
         run: npm run build
         env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           API_KEY: ${{ secrets.API_KEY }}
 
       - name: Upload artifact

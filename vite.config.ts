@@ -12,7 +12,11 @@ export default defineConfig(({ mode }) => {
     base: '', 
     plugins: [react()],
     define: {
-      'process.env.API_KEY': JSON.stringify(process.env.API_KEY || env.API_KEY)
+      // Gemini key (API_KEY kept as a backward-compatible alias)
+      'process.env.API_KEY':        JSON.stringify(process.env.API_KEY || env.API_KEY),
+      'process.env.GEMINI_API_KEY': JSON.stringify(process.env.GEMINI_API_KEY || env.GEMINI_API_KEY || process.env.API_KEY || env.API_KEY),
+      // OpenAI key — when present (sk-...), live mode rewrites with gpt-4o-mini
+      'process.env.OPENAI_API_KEY': JSON.stringify(process.env.OPENAI_API_KEY || env.OPENAI_API_KEY)
     },
     build: {
       outDir: 'dist',

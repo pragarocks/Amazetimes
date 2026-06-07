@@ -25,18 +25,32 @@ import path from 'path';
 
 // ── Config ────────────────────────────────────────────────────────────────────
 
-const API_KEY = process.env.API_KEY;
-if (!API_KEY) {
-  console.error("FATAL: API_KEY env var is not set. Exiting.");
+// ── AI provider selection (first match wins) ──────────────────────────────────
+//   OPENAI_API_KEY (sk-...)            → OpenAI  gpt-4o-mini
+//   GEMINI_API_KEY / API_KEY           → Gemini  gemini-2.5-flash
+const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY || process.env.API_KEY;
+const OPENAI_MODEL   = 'gpt-4o-mini';
+const GEMINI_MODEL   = 'gemini-2.5-flash';
+
+let AI_PROVIDER;
+if (OPENAI_API_KEY && OPENAI_API_KEY.startsWith('sk-')) {
+  AI_PROVIDER = 'openai';
+} else if (GEMINI_API_KEY) {
+  AI_PROVIDER = 'gemini';
+} else {
+  console.error("FATAL: No AI key set. Provide OPENAI_API_KEY or GEMINI_API_KEY (or API_KEY). Exiting.");
   process.exit(1);
 }
 
-const ai = new GoogleGenAI({ apiKey: API_KEY });
+// Gemini client is created lazily only when that provider is active.
+const ai = AI_PROVIDER === 'gemini' ? new GoogleGenAI({ apiKey: GEMINI_API_KEY }) : null;
+
 const OUTPUT_DIR  = './public/data';
 const OUTPUT_FILE = path.join(OUTPUT_DIR, 'news.json');
 const ITEMS_PER_FEED = 5;    // max NEW items processed per run (keeps free-tier API costs low)
 const CACHE_PER_FEED = 30;   // max cached articles kept per feed
-const AI_BATCH_SIZE  = 5;    // articles sent to Gemini per API call
+const AI_BATCH_SIZE  = 5;    // articles sent to the AI provider per API call
 const KEEP_DAYS      = 7;    // articles older than this are pruned from cache
 
 // ── Utilities ─────────────────────────────────────────────────────────────────
@@ -389,10 +403,11 @@ const SCRAPERS = {
   thanthi:   scrapeDailyThanthi,
 };
 
-// ── Gemini AI Processing ──────────────────────────────────────────────────────
+// ── AI Processing (provider-agnostic) ──────────────────────────────────────────
 
-async function processWithGemini(items) {
-  const payload = items
+/** Strip HTML/whitespace and cap length for each raw item before sending to the AI. */
+function buildPayload(items) {
+  return items
     .map(item => ({
       link:    item.link,
       title:   item.title || '',
@@ -403,32 +418,44 @@ async function processWithGemini(items) {
         .substring(0, 1200),
     }))
     .filter(p => p.title.length > 5);
+}
 
-  if (payload.length === 0) return [];
+/** Shared editorial instructions used by every provider. */
+function buildInstructions(count) {
+  return `You are the Chief Editor for 'The Kongu Times', a premium Tamil digital news platform.
 
-  const response = await withRetry(
-    () => ai.models.generateContent({
-      model: 'gemini-2.5-flash',
-      contents: `You are the Chief Editor for 'The Kongu Times', a premium Tamil digital news platform.
-
-TASK: Rewrite the following ${payload.length} news items into high-quality, professional Tamil journalism.
+TASK: Rewrite the following ${count} news items into high-quality, professional Tamil journalism.
 
 STRICT RULES:
 1. OUTPUT LANGUAGE: Every field MUST be in Tamil script only.
 2. TONE: Objective, authoritative, editorial-quality journalism.
 3. BRANDING: NEVER mention external sources (BBC, Google, News18, PTI, ANI, Dinamalar, etc.).
    Replace attributions with "எமது செய்திக்குழு அறிகிறது" or "தகவல்கள் தெரிவிக்கின்றன".
-4. CONTENT RULES:
+4. CONTENT RULES (per article object):
+   - originalLink: MUST exactly match the input link
    - headline: Powerful, informative Tamil headline (15-25 words)
    - summary: Concise 2-sentence Tamil intro paragraph
    - fullArticleContent: Detailed HTML article using <p> and <h3> tags, minimum 3 paragraphs, no placeholder text
    - category: Topic name in Tamil (e.g., "அரசியல்", "விளையாட்டு", "சினிமா")
    - readingTime: e.g., "2 நிமிடம்"
    - sentiment: exactly one of "positive", "neutral", or "negative"
-   - tags: exactly 3 relevant Tamil keyword tags
-5. The originalLink field must exactly match the input link.
+   - tags: exactly 3 relevant Tamil keyword tags`;
+}
 
-DATA: ${JSON.stringify(payload)}`,
+/** Route a batch to the active provider. Returns an array of AI article objects. */
+async function processBatch(items) {
+  const payload = buildPayload(items);
+  if (payload.length === 0) return [];
+  return AI_PROVIDER === 'openai'
+    ? processWithOpenAI(payload)
+    : processWithGemini(payload);
+}
+
+async function processWithGemini(payload) {
+  const response = await withRetry(
+    () => ai.models.generateContent({
+      model: GEMINI_MODEL,
+      contents: `${buildInstructions(payload.length)}\n\nDATA: ${JSON.stringify(payload)}`,
       config: {
         responseMimeType: 'application/json',
         responseSchema: {
@@ -458,12 +485,49 @@ DATA: ${JSON.stringify(payload)}`,
   return JSON.parse(text);
 }
 
+async function processWithOpenAI(payload) {
+  const response = await withRetry(
+    () => fetch('https://api.openai.com/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${OPENAI_API_KEY}`,
+        'Content-Type':  'application/json',
+      },
+      body: JSON.stringify({
+        model: OPENAI_MODEL,
+        temperature: 0.7,
+        response_format: { type: 'json_object' },
+        messages: [
+          { role: 'system', content: buildInstructions(payload.length) },
+          {
+            role: 'user',
+            content: `Return ONLY a JSON object of the form {"articles": [ ... ]} where each element ` +
+              `has the fields: originalLink, headline, summary, fullArticleContent, category, ` +
+              `readingTime, sentiment, tags (array of 3).\n\nDATA: ${JSON.stringify(payload)}`,
+          },
+        ],
+      }),
+    }).then(async res => {
+      if (!res.ok) throw new Error(`OpenAI ${res.status}: ${(await res.text()).substring(0, 200)}`);
+      return res.json();
+    }),
+    3, 3000
+  );
+
+  const text = response.choices?.[0]?.message?.content?.trim();
+  if (!text) throw new Error('Empty response from OpenAI');
+  const parsed = JSON.parse(text);
+  // json_object mode returns an object; accept either {articles:[...]} or a bare array.
+  return Array.isArray(parsed) ? parsed : (parsed.articles || parsed.items || []);
+}
+
 // ── Main ──────────────────────────────────────────────────────────────────────
 
 async function generateNews() {
   console.log('═══════════════════════════════════════════════════');
   console.log('  The Kongu Times News Generator v2');
   console.log(`  ${new Date().toISOString()}`);
+  console.log(`  AI provider: ${AI_PROVIDER === 'openai' ? `OpenAI (${OPENAI_MODEL})` : `Gemini (${GEMINI_MODEL})`}`);
   console.log('═══════════════════════════════════════════════════');
 
   // Load cached data
@@ -550,7 +614,7 @@ async function generateNews() {
         if (i > 0) await delay(1000); // rate-limit between Gemini calls
 
         try {
-          const aiBatch = await processWithGemini(batch);
+          const aiBatch = await processBatch(batch);
 
           for (const aiItem of aiBatch) {
             const original = batch.find(o => o.link === aiItem.originalLink) || batch[0];

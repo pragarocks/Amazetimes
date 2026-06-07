@@ -247,16 +247,11 @@ const App: React.FC = () => {
       <footer className="site-footer">
         <div className="max-w-[1280px] mx-auto flex flex-col md:flex-row items-center justify-between gap-4">
           <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-lg flex items-center justify-center text-white font-display font-black text-sm"
-                 style={{ background: 'linear-gradient(135deg, hsl(22,90%,47%), hsl(336,82%,50%))' }}>
-              கொ
-            </div>
-            <div>
-              <div className="font-display font-bold text-slate-900 text-base">
-                The Kongu <span style={{ color: 'hsl(22,90%,47%)' }}>Times</span>
-              </div>
-              <div className="text-[10px] text-slate-400">Gemini AI மூலம் இயக்கப்படுகிறது</div>
-            </div>
+            <img
+              src="./images/kongu-times-logo.png"
+              alt="The Kongu Times · கொங்கு டைம்ஸ்"
+              className="h-10 w-auto"
+            />
           </div>
           <p className="text-xs text-slate-400 text-center">
             © {new Date().getFullYear()} The Kongu Times · கொங்கு டைம்ஸ். அனைத்து உரிமைகளும் பாதுகாக்கப்பட்டவை.

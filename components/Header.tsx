@@ -33,7 +33,7 @@ export const Header: React.FC<HeaderProps> = ({
       {/* Top bar */}
       <div style={{ background: 'hsl(22,90%,47%)' }} className="text-white text-[11px] px-4 py-1 flex items-center justify-between">
         <span className="font-semibold opacity-90">{dateStr}</span>
-        <span className="opacity-75 hidden sm:block">கொங்கு டைம்ஸ் — Gemini AI மூலம் இயக்கப்படுகிறது</span>
+        <span className="opacity-75 hidden sm:block font-tamil">கொங்கு மண்டலத்தின் குரல்</span>
         <div className="flex items-center gap-2">
           {lastUpdated && (
             <span className="opacity-75">
@@ -55,20 +55,13 @@ export const Header: React.FC<HeaderProps> = ({
 
       {/* Brand row */}
       <div className="max-w-[1280px] mx-auto px-4 md:px-6 flex items-center justify-between h-14">
-        <div className="flex items-center gap-2.5">
-          <div className="w-9 h-9 rounded-lg flex items-center justify-center text-white font-display font-black text-base shadow-md"
-               style={{ background: 'linear-gradient(135deg, hsl(22,90%,47%), hsl(336,82%,50%))' }}>
-            கொ
-          </div>
-          <div className="leading-none">
-            <div className="font-display text-lg font-black tracking-tight text-slate-900">
-              The Kongu <span style={{ color: 'hsl(22,90%,47%)' }}>Times</span>
-            </div>
-            <div className="font-tamil text-[10px] mt-0.5" style={{ color: 'hsl(22,90%,47%)' }}>
-              கொங்கு டைம்ஸ்
-            </div>
-          </div>
-        </div>
+        <a href="./" className="flex items-center shrink-0">
+          <img
+            src="./images/kongu-times-logo.png"
+            alt="The Kongu Times · கொங்கு டைம்ஸ்"
+            className="h-10 md:h-12 w-auto"
+          />
+        </a>
 
         {/* Desktop: feed tab bar */}
         <nav className="hidden lg:flex items-center gap-1.5 flex-1 justify-center overflow-x-auto scrollbar-hide">
