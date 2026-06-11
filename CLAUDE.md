@@ -32,9 +32,14 @@ The two providers share `buildInstructions()` (the editorial prompt) and return 
 2. Prunes articles older than `KEEP_DAYS` (7)
 3. Fetches raw items from 13 Google News RSS sources (5 categories + 8 Kongu districts)
 4. Deduplicates against the cache (by `link`), caps at `ITEMS_PER_FEED` new items
-5. Sends **only new** items to the active provider (`processBatch`) in batches of `AI_BATCH_SIZE`
-6. Merges results back into the cache, sorts by `pubDate`, trims to `CACHE_PER_FEED`
-7. Writes the updated `news.json`
+5. **Image enrichment** (`enrichImage`): Google News RSS has no images and its `CBMi…`
+   redirect links can't be followed directly. So each new item's link is decoded to
+   the real publisher URL via Google's `batchexecute` endpoint (`decodeGoogleNewsUrl`),
+   then that page's `og:image`/`twitter:image` is scraped (`scrapeOgImage`). Per-run
+   cached in `IMG_CACHE`; ~90%+ hit rate. Failures leave `thumbnail` blank → UI placeholder.
+6. Sends **only new** items to the active provider (`processBatch`) in batches of `AI_BATCH_SIZE`
+7. Merges results back into the cache, sorts by `pubDate`, trims to `CACHE_PER_FEED`
+8. Writes the updated `news.json` (dropping feed keys no longer in `FEED_SOURCES`)
 
 Key constants at the top of the script:
 - `ITEMS_PER_FEED = 5` — max NEW items processed per run (keeps free-tier cost low)

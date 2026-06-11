@@ -241,6 +241,78 @@ function normaliseRSSItem(item) {
   };
 }
 
+// ── Image enrichment ────────────────────────────────────────────────────────
+//
+// Google News RSS items carry no image, and their CBMi… redirect links can't be
+// followed directly (Google serves an interstitial whose og:image is a generic
+// logo). So we DECODE the link to the real publisher URL via Google's
+// `batchexecute` endpoint, then scrape that page's og:image. Language-agnostic,
+// so it works for our Tamil feeds where publisher-feed title-matching does not.
+
+const IMG_CACHE = new Map(); // google link → resolved image url (per-run)
+
+function fetchWithTimeout(url, opts = {}, ms = 15000) {
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), ms);
+  return fetch(url, { ...opts, signal: ctrl.signal }).finally(() => clearTimeout(t));
+}
+
+/** Decode a news.google.com/rss/articles/CBMi… URL into the real publisher URL. */
+async function decodeGoogleNewsUrl(googleUrl) {
+  const base64Str = new URL(googleUrl).pathname.split('/').pop();
+  const shell = await fetchWithTimeout(googleUrl, { headers: { 'User-Agent': randomUA() } });
+  const html  = await shell.text();
+  const sig = html.match(/data-n-a-sg="([^"]+)"/);
+  const ts  = html.match(/data-n-a-ts="([^"]+)"/);
+  if (!sig || !ts) throw new Error('no signature in article shell');
+
+  const inner = ['garturlreq', [["X","X",["X","X"],null,null,1,1,"US:en",null,1,null,null,null,null,null,0,1],
+    "X","X",1,[1,1,1],1,1,null,0,0,null,0], base64Str, Number(ts[1]), sig[1]];
+  const freq = JSON.stringify([[['Fbv4je', JSON.stringify(inner), null, 'generic']]]);
+
+  const res = await fetchWithTimeout('https://news.google.com/_/DotsSplashUi/data/batchexecute', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8', 'User-Agent': randomUA() },
+    body: 'f.req=' + encodeURIComponent(freq),
+  });
+  const text = await res.text();
+  const line = text.split('\n').find(l => l.includes('garturlres') || l.includes('http'));
+  const payload = JSON.parse(line).find(p => Array.isArray(p) && p[2])?.[2];
+  return JSON.parse(payload)[1];
+}
+
+/** Scrape og:image / twitter:image from an article page. */
+async function scrapeOgImage(url) {
+  const res  = await fetchWithTimeout(url, { headers: { 'User-Agent': randomUA() }, redirect: 'follow' });
+  const html = await res.text();
+  const patterns = [
+    /<meta[^>]+property=["']og:image(?::secure_url)?["'][^>]+content=["']([^"']+)["']/i,
+    /<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:image["']/i,
+    /<meta[^>]+name=["']twitter:image["'][^>]+content=["']([^"']+)["']/i,
+  ];
+  for (const re of patterns) {
+    const m = html.match(re);
+    if (m && /^https?:\/\//.test(m[1])) return m[1];
+  }
+  return '';
+}
+
+/** Best-effort: resolve a real publisher image for one raw item (mutates thumbnail). */
+async function enrichImage(item) {
+  if (item.thumbnail) return;                       // already have one (media:content)
+  if (IMG_CACHE.has(item.link)) { item.thumbnail = IMG_CACHE.get(item.link); return; }
+
+  let img = '';
+  try {
+    const isGoogle = /news\.google\.com\/.*\/articles\//.test(item.link);
+    const realUrl  = isGoogle ? await decodeGoogleNewsUrl(item.link) : item.link;
+    img = await scrapeOgImage(realUrl);
+  } catch { /* leave blank — UI falls back to a placeholder */ }
+
+  IMG_CACHE.set(item.link, img);
+  item.thumbnail = img;
+}
+
 // ── AI Processing (provider-agnostic) ──────────────────────────────────────────
 
 /** Strip HTML/whitespace and cap length for each raw item before sending to the AI. */
@@ -450,6 +522,10 @@ async function generateNews() {
       }
 
       console.log(`│  🆕 ${newItems.length} new articles to process`);
+
+      // ── Step 2.5: Enrich new items with real publisher images ────────────
+      await Promise.all(newItems.map(it => enrichImage(it)));
+      console.log(`│  🖼  Images found: ${newItems.filter(i => i.thumbnail).length}/${newItems.length}`);
 
       // ── Step 3: AI rewrite in batches ────────────────────────────────────
       const processedItems = [];
